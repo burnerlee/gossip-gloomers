@@ -17,7 +17,7 @@ var COUNTER = 0
 
 func initLogger() {
 	logger = log.New()
-	logFile, err := os.OpenFile("/Users/burnerlee/Projects/random/gossip-gloomers/maelstrom-unique-ids/maelstrom.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	logFile, err := os.OpenFile("maelstrom.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err != nil {
 		panic(err)
 	}
