@@ -27,14 +27,13 @@ func sendMessageWithRetry(n *maelstrom.Node, neighbour string, message, msg_id f
 	body := map[string]any{
 		// assign a random message id
 		"msg_id":  msg_id,
-		"type":    "broadcast",
+		"type":    "share",
 		"message": message,
 	}
 	for {
-		ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(1*time.Second))
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(1*time.Second))
 		defer cancel()
-		_, err := n.SyncRPC(ctx, neighbour, body)
-		if err != nil {
+		if _, err := n.SyncRPC(ctx, neighbour, body); err != nil {
 			logger.Errorf("Failed to send message to %s: %s", neighbour, err)
 			continue
 		}
@@ -50,64 +49,44 @@ func main() {
 		lock:     sync.Mutex{},
 	}
 
+	// neighbourStore := nodeNeighbours{
+	// 	neighbours: make(map[string]bool),
+	// }
+
 	logger.Info("Starting node")
 
 	n := maelstrom.NewNode()
 
-	neighbourStore := &nodeNeighbours{
-		neighbours: make(map[string]bool),
-		lock:       sync.Mutex{},
-	}
-
 	n.Handle("topology", func(msg maelstrom.Message) error {
-		var body map[string]any
 
-		if err := json.Unmarshal(msg.Body, &body); err != nil {
-			return err
+		body := map[string]any{
+			"type": "topology_ok",
 		}
-		topologyInterface := body["topology"].(map[string]interface{})
-
-		for nodeID, topology := range topologyInterface {
-			neighbours := make([]string, 0)
-			for _, neighbour := range topology.([]interface{}) {
-				neighbours = append(neighbours, neighbour.(string))
-			}
-
-			if nodeID == n.ID() {
-				for _, neighbour := range neighbours {
-					neighbourStore.addNeighbour(neighbour)
-				}
-			} else {
-				n.Send(nodeID, map[string]any{
-					"type":       "neighbour_share",
-					"neighbours": neighbours,
-				})
-			}
-		}
-
-		body["type"] = "topology_ok"
-		delete(body, "topology")
-
 		n.Reply(msg, body)
 		return nil
 	})
 
-	n.Handle("neighbour_share", func(msg maelstrom.Message) error {
+	n.Handle("broadcast", func(msg maelstrom.Message) error {
 		var body map[string]any
-
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
 		}
 
-		neighbours := body["neighbours"].([]interface{})
-		for _, neighbour := range neighbours {
-			neighbourStore.addNeighbour(neighbour.(string))
-		}
+		message := body["message"].(float64)
 
+		logger.Infof("Received message from maelstrom %f on node %s", message, n.ID())
+
+		centerNode := "n12"
+		msg_id := body["msg_id"].(float64)
+		go sendMessageWithRetry(n, centerNode, message, msg_id)
+
+		body["type"] = "broadcast_ok"
+		delete(body, "message")
+		n.Reply(msg, body)
 		return nil
 	})
 
-	n.Handle("broadcast", func(msg maelstrom.Message) error {
+	n.Handle("share", func(msg maelstrom.Message) error {
 		var body map[string]any
 
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
@@ -116,21 +95,22 @@ func main() {
 
 		message := body["message"].(float64)
 
-		logger.Infof("Received message %f", message)
+		logger.Infof("Received message from network %f on node %s", message, n.ID())
 
 		alreadyExists := store.checkMessage(message)
 		if alreadyExists {
 			logger.Infof("Message %f already exists", message)
-			body["type"] = "broadcast_ok"
+			body["type"] = "share_ok"
 			delete(body, "message")
 			n.Reply(msg, body)
 			return nil
 		}
+
 		store.addMessage(message)
 
-		neighbours := neighbourStore.getNeighbours()
-		logger.Infof("neighbours for %s is %v", n.ID(), neighbours)
-		for _, neighbour := range neighbours {
+		logger.Infof("Broadcasting message %f to neighbours %s from node %s", message, getTopologyNeighbours(n.ID()), n.ID())
+
+		for _, neighbour := range getTopologyNeighbours(n.ID()) {
 			if neighbour == msg.Src {
 				// skip sending back to the sender
 				continue
@@ -139,7 +119,7 @@ func main() {
 			go sendMessageWithRetry(n, neighbour, message, msg_id)
 		}
 
-		body["type"] = "broadcast_ok"
+		body["type"] = "share_ok"
 		delete(body, "message")
 
 		n.Reply(msg, body)

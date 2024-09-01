@@ -65,6 +65,15 @@ func main() {
 
 		message := body["message"].(float64)
 		logger.Infof("Received message %f", message)
+
+		alreadyExists := store.checkMessage(message)
+		if alreadyExists {
+			logger.Infof("Message %f already exists", message)
+			body["type"] = "broadcast_ok"
+			delete(body, "message")
+			n.Reply(msg, body)
+			return nil
+		}
 		store.addMessage(message)
 
 		for _, neighbour := range neighbourStore.getNeighbours() {

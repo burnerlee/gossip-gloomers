@@ -26,3 +26,11 @@ func (m *messagesStorage) getMessages() []float64 {
 
 	return messages
 }
+
+func (m *messagesStorage) checkMessage(msg float64) bool {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	_, ok := m.messages[msg]
+	return ok
+}

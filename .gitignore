@@ -4,3 +4,4 @@ vendor/
 store/
 lib/
 maelstrom
+.DS_Store
