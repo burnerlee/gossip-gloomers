@@ -15,10 +15,13 @@ var logger *log.Logger
 
 func initLogger() {
 	logger = log.New()
-	logFile, err := os.OpenFile("/Users/burnerlee/Projects/random/gossip-gloomers/maelstrom-broadcast/sol-d/maelstrom.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	logFile, err := os.OpenFile("/Users/burnerlee/Projects/random/gossip-gloomers/maelstrom-broadcast/sol-d/maelstrom.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		panic(err)
 	}
+	logger.SetFormatter(&log.JSONFormatter{
+		TimestampFormat: time.RFC3339Nano,
+	})
 	logger.SetOutput(logFile)
 	logger.SetLevel(log.DebugLevel)
 }
@@ -37,23 +40,18 @@ func sendMessageWithRetry(n *maelstrom.Node, neighbour string, message, msg_id f
 			logger.Errorf("Failed to send message to %s: %s", neighbour, err)
 			continue
 		}
+		logger.Infof("Message %f sent to neighbour %s from %s", message, neighbour, n.ID())
 		return
 	}
 }
 
 func main() {
-	initLogger()
-
 	store := messagesStorage{
 		messages: make(map[float64]bool),
 		lock:     sync.Mutex{},
 	}
 
-	// neighbourStore := nodeNeighbours{
-	// 	neighbours: make(map[string]bool),
-	// }
-
-	logger.Info("Starting node")
+	initLogger()
 
 	n := maelstrom.NewNode()
 
@@ -76,7 +74,9 @@ func main() {
 
 		logger.Infof("Received message from maelstrom %f on node %s", message, n.ID())
 
+		// harcoding this here, but this should be generalised
 		centerNode := "n12"
+
 		msg_id := body["msg_id"].(float64)
 		go sendMessageWithRetry(n, centerNode, message, msg_id)
 
@@ -88,7 +88,6 @@ func main() {
 
 	n.Handle("share", func(msg maelstrom.Message) error {
 		var body map[string]any
-
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
 		}
@@ -106,15 +105,12 @@ func main() {
 			return nil
 		}
 
+		// logger.Infof("saving message %f on node %s", message, n.ID())
 		store.addMessage(message)
 
 		logger.Infof("Broadcasting message %f to neighbours %s from node %s", message, getTopologyNeighbours(n.ID()), n.ID())
 
 		for _, neighbour := range getTopologyNeighbours(n.ID()) {
-			if neighbour == msg.Src {
-				// skip sending back to the sender
-				continue
-			}
 			msg_id := body["msg_id"].(float64)
 			go sendMessageWithRetry(n, neighbour, message, msg_id)
 		}
