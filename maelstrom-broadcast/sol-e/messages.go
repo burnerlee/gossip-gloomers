@@ -1,0 +1,36 @@
+package main
+
+import (
+	"sync"
+)
+
+type messagesStorage struct {
+	messages map[float64]bool
+	lock     sync.Mutex
+}
+
+func (m *messagesStorage) addMessage(msg float64) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	m.messages[msg] = true
+
+}
+
+func (m *messagesStorage) getMessages() []float64 {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	messages := make([]float64, 0)
+	for msg := range m.messages {
+		messages = append(messages, msg)
+	}
+	return messages
+}
+
+func (m *messagesStorage) checkMessage(msg float64) bool {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	_, ok := m.messages[msg]
+	return ok
+}
